@@ -89,7 +89,7 @@ inline bool startsWith(const std::string& s, std::string token) {
     }
     return true;
 }
-inline bool endsWith(const std::string& s, char ch) { return s.length() > 0 && s[0] == ch; }
+inline bool endsWith(const std::string& s, char ch) { return s.length() > 0 && s[s.length() - 1] == ch; }
 inline bool endsWith(const std::string& s, std::string token) {
     if (s.length() < token.length()) return false;
     for (int i = 1; i <= token.length(); ++i) {
@@ -345,7 +345,8 @@ class Config : protected std::shared_ptr<_Config> {
     Config(int argc, char** argv, std::string delimiter = " = ")
         : std::shared_ptr<_Config>(new _Config(argc, argv, delimiter)) {}
 
-    operator bool() { return this->operator bool(); }
+    operator bool() { return std::shared_ptr<_Config>::operator bool(); }
+    _Config* operator->() { return std::shared_ptr<_Config>::operator->(); }
 };
 
 inline Config _globalConfig;
