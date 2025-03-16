@@ -100,19 +100,19 @@ inline bool endsWith(std::string s, std::string token) {
 
 }  // namespace strutils
 
-class _CfgParser {
+class _Config {
    private:
     enum SectionType { UNORDERED, ORDERED, LIST };
-    std::vector<std::string> settingsFileNames;
+    std::vector<std::string> configFileNames;
     std::unordered_map<std::string, unordered_container> unorderedSections;
     std::unordered_map<std::string, ordered_container> orderedSections;
     std::unordered_map<std::string, list_container> listSections;
 
     std::string delimiter = " = ";
 
-    void handleCommand(std::string line) {
+    void handleCommand(std::string line, std::string filename, int linecnt) {
         std::vector<std::string> tokens = strutils::split(line, " ");
-        if (tokens.size() == 0) throw std::runtime_error("Command expected after !");
+        if (tokens.size() == 0) error(filename, line, linecnt, "Command expected after '!'");
         std::string cmd = tokens[0];
         tokens.erase(tokens.begin());
 
@@ -120,8 +120,27 @@ class _CfgParser {
             parse(strutils::concat(tokens));
             return;
         }
-        throw std::runtime_error("Unknown command '" + cmd + "'");
+        error(filename, line, linecnt, "Unknown command '" + cmd + "'");
     }
+
+    void error(std::string filename, std::string line, int linecnt, std::string description) {
+        std::string message = "Config parser error in file '";
+        message += filename;
+        message += "', line: ";
+        message += std::to_string(linecnt);
+        message += "\n";
+        message += line;
+        message += "\n";
+        message += description;
+        throw std::runtime_error(message);
+    }
+
+    void parseAll() {
+        for (std::string filename : configFileNames) {
+            parse(filename);
+        }
+    }
+
     void parse(std::string filename) {
         try {
             unordered_container mainSection;
@@ -131,84 +150,77 @@ class _CfgParser {
 
             std::ifstream file(filename.c_str());
             if (file.fail()) {
-                throw std::runtime_error("can not open file: " + std::string(strerror(errno)));
+                throw std::runtime_error(
+                    "can not open file '" + filename + "': " + std::string(strerror(errno))
+                );
             }
 
-            // текущая секции
+            // name of current section
             std::string sectionName;
             SectionType type = UNORDERED;
 
             std::string line;
             std::string key, value;
 
-            int linecnt = 1;
+            int linecnt = 0;
             while (getline(file, line)) {
                 ++linecnt;
                 line = strutils::trim(line, '\r');
                 line = strutils::trimLeft(line);
                 if (line.empty()) continue;
 
-                // комманды (инклюды и в будущем возможно что-то еще)
+                // commands (only include at this moment, maybe smth more later)
                 if (strutils::startsWith(line, "!")) {
-                    handleCommand(strutils::trimLeft(line, '!'));
+                    handleCommand(strutils::trimLeft(line, '!'), filename, linecnt);
                     continue;
                 }
 
-                // комментарии
+                // comments
                 if (strutils::startsWith(line, "#")) continue;
 
-                // неупорядоченные секции
+                // unordered section
                 if (strutils::startsWith(line, "[")) {
                     line = strutils::trimRight(line);
                     if (!strutils::endsWith(line, "]"))
-                        throw std::runtime_error(
-                            "Incorrect section format at line" + std::to_string(linecnt)
-                        );
+                        error(filename, line, linecnt, "Incorrect section format");
                     type = UNORDERED;
                     sectionName = line.substr(1, line.length() - 2);
                     unordSectionsTmp[sectionName];
                     continue;
                 }
 
-                // упорядоченные секции
+                // ordered section
                 if (strutils::startsWith(line, "<")) {
                     line = strutils::trimRight(line);
                     if (!strutils::endsWith(line, ">"))
-                        throw std::runtime_error(
-                            "Incorrect section format at line" + std::to_string(linecnt)
-                        );
+                        error(filename, line, linecnt, "Incorrect section format");
                     sectionName = line.substr(1, line.length() - 2);
-                    if (sectionName.empty()) throw std::runtime_error("Invalid name for ordered section");
                     type = ORDERED;
                     ordSectionsTmp[sectionName];
                     continue;
                 }
 
-                // секция-список
+                // list section
                 if (strutils::startsWith(line, "{")) {
                     line = strutils::trimRight(line);
                     if (!strutils::endsWith(line, "}"))
-                        throw std::runtime_error(
-                            "Incorrect section format at line" + std::to_string(linecnt)
-                        );
+                        error(filename, line, linecnt, "Incorrect section format");
                     sectionName = strutils::trim(line.substr(1, line.length() - 2));
-                    if (sectionName.empty()) throw std::runtime_error("Invalid name for list section");
                     type = LIST;
                     listSectionsTmp[sectionName];
                     continue;
                 }
 
-                // парсинг настройки
+                // key-value parsing
                 if (type != LIST) {
                     std::vector<std::string> splitt = strutils::split(line, delimiter);
-                    if (splitt.size() < 2)
-                        throw std::runtime_error("incorrect line format at line " + std::to_string(linecnt));
+                    if (splitt.size() < 2) error(filename, line, linecnt, "Incorrect line format");
                     key = strutils::trim(splitt[0]);
                     splitt.erase(splitt.begin());
                     value = strutils::trim(strutils::concat(splitt, delimiter));
                 }
 
-                // определяем куда класть
+                
                 switch (type) {
                     case UNORDERED: {
                         unordSectionsTmp[sectionName][key] = value;
@@ -226,7 +238,7 @@ class _CfgParser {
                 }
             }
 
-            // мерж
+            // merge
             for (auto it = unordSectionsTmp.begin(); it != unordSectionsTmp.end(); ++it) {
                 for (auto it1 = it->second.begin(); it1 != it->second.end(); ++it1) {
                     unorderedSections[it->first][it1->first] = it1->second;
@@ -241,101 +253,116 @@ class _CfgParser {
 
             file.close();
         } catch (std::exception& ex) {
-            throw std::runtime_error("Settings loader error in file " + filename + "\n" + ex.what());
+            throw std::runtime_error("Config parser error in file " + filename + "\n" + ex.what());
         } catch (...) {
-            throw std::runtime_error("Failed to load settings");
+            throw std::runtime_error("Config parser unknown error");
         }
     }
 
    public:
-    _CfgParser(std::string filename) {
-        this->settingsFileNames.push_back(filename);
-        parse(filename);
+    _Config(std::string filename, std::string delimiter) {
+        this->delimiter = delimiter;
+        this->configFileNames.push_back(filename);
+        parseAll();
     }
 
-    _CfgParser(std::vector<std::string> fileNames) {
-        this->settingsFileNames = fileNames;
-        for (std::string name : fileNames) {
-            parse(name);
-        }
+    _Config(std::vector<std::string> fileNames, std::string delimiter) {
+        this->delimiter = delimiter;
+        this->configFileNames = fileNames;
+        parseAll();
     }
 
-    _CfgParser(int argc, char** argv) {
+    _Config(int argc, char** argv, std::string delimiter) {
+        this->delimiter = delimiter;
         for (int i = 1; i < argc; ++i) {
-            parse(argv[i]);
-            settingsFileNames.push_back(argv[i]);
+            configFileNames.push_back(argv[i]);
         }
+        parseAll();
     }
 
+    // only for unordered sections
     bool contains(std::string name) { return contains("", name); }
 
+    // only for unordered sections
     bool contains(std::string unordSec, std::string name) {
         if (unorderedSections.find(unordSec) == unorderedSections.end()) return false;
         return unorderedSections[unordSec].find(name) != unorderedSections[unordSec].end();
     }
 
-    std::string getSetting(std::string key) { return getSetting("", key); }
+    std::string get(std::string key) { return get("", key); }
 
-    unordered_container& getUnorderedSection(std::string section) {
+    unordered_container& getSection(std::string section) {
         if (unorderedSections.find(section) == unorderedSections.end())
-            throw std::runtime_error(section + " not found in unordered sections");
+            throw std::runtime_error("No such unordered section '" + section + "'");
         return unorderedSections[section];
     }
 
-    std::string getSetting(std::string section, std::string key) {
-        unordered_container& sectionMap = getUnorderedSection(section);
+    std::string get(std::string section, std::string key) {
+        unordered_container& sectionMap = getSection(section);
         if (sectionMap.find(key) == sectionMap.end())
-            throw std::runtime_error(key + " not found in section " + section);
+            throw std::runtime_error("'" + key + "' not found in unordered section '" + section + "'");
         return sectionMap[key];
     }
 
     ordered_container& getOrderedSection(std::string section) {
         if (orderedSections.find(section) == orderedSections.end())
-            throw std::runtime_error(section + " not found in ordered sections");
+            throw std::runtime_error("No such ordered section '" + section + "'");
         return orderedSections[section];
     }
 
-    std::string getOrderedSetting(std::string section, std::string key) {
+    std::string getOrdered(std::string section, std::string key) {
         ordered_container& sectionMap = getOrderedSection(section);
         ordered_container::iterator it;
         it = find_if(sectionMap.begin(), sectionMap.end(), [key](std::pair<std::string, std::string>& p) {
             return p.first == key;
         });
-        if (it == sectionMap.end()) throw std::runtime_error(key + " not found in section " + section);
+        if (it == sectionMap.end())
+            throw std::runtime_error("'" + key + "' not found in ordered section '" + section + "'");
         return it->second;
     }
     list_container getList(std::string name) {
         std::unordered_map<std::string, list_container>::iterator it = listSections.find(name);
-        if (it == listSections.end()) throw std::runtime_error(name + " not found in list sections");
+        if (it == listSections.end()) throw std::runtime_error("No such list section '" + name + "'");
         return it->second;
     }
 
-    std::vector<std::string> getSettingsFileNames() { return settingsFileNames; }
-    std::string getSettingsFileName() { return settingsFileNames[settingsFileNames.size() - 1]; }
+    std::vector<std::string> getConfigFileNames() { return configFileNames; }
+    std::string getConfigFileName() { return configFileNames[configFileNames.size() - 1]; }
 
     unordered_container& getMainSection() { return unorderedSections[""]; }
-    std::unordered_map<std::string, ordered_container>& getOrdered() { return orderedSections; }
-    std::unordered_map<std::string, unordered_container>& getUnordered() { return unorderedSections; }
-    std::unordered_map<std::string, list_container>& getLists() { return listSections; }
+    std::unordered_map<std::string, ordered_container>& getAllOrdered() { return orderedSections; }
+    std::unordered_map<std::string, unordered_container>& getAllUnordered() { return unorderedSections; }
+    std::unordered_map<std::string, list_container>& getAllLists() { return listSections; }
 };
 
-class CfgParser : public std::shared_ptr<_CfgParser> {
+class Config : protected std::shared_ptr<_Config> {
    public:
-    CfgParser() : std::shared_ptr<_CfgParser>() {}
-    CfgParser(std::string filename) : std::shared_ptr<_CfgParser>(new _CfgParser(filename)) {}
-    CfgParser(std::vector<std::string> filenames) : std::shared_ptr<_CfgParser>(new _CfgParser(filenames)) {}
-    CfgParser(int argc, char** argv) : std::shared_ptr<_CfgParser>(new _CfgParser(argc, argv)) {}
+    Config() : std::shared_ptr<_Config>() {}
+    Config(std::string filename, std::string delimiter = " = ")
+        : std::shared_ptr<_Config>(new _Config(filename, delimiter)) {}
+    Config(std::vector<std::string> filenames, std::string delimiter = " = ")
+        : std::shared_ptr<_Config>(new _Config(filenames, delimiter)) {}
+    Config(int argc, char** argv, std::string delimiter = " = ")
+        : std::shared_ptr<_Config>(new _Config(argc, argv, delimiter)) {}
+
+    operator bool() { return this->operator bool(); }
 };
 
-inline CfgParser _globalCfgParser;
+inline Config _globalConfig;
 
-inline void initCfgParser(std::string filename) { _globalCfgParser = CfgParser(filename); }
-inline void initCfgParser(std::vector<std::string> filenames) { _globalCfgParser = CfgParser(filenames); }
-inline void initCfgParser(int argc, char** argv) { _globalCfgParser = CfgParser(argc, argv); }
+inline void initConfig(std::string filename, std::string delimiter = " = ") {
+    _globalConfig = Config(filename);
+}
+inline void initConfig(std::vector<std::string> filenames, std::string delimiter = " = ") {
+    _globalConfig = Config(filenames);
+}
+inline void initConfig(int argc, char** argv, std::string delimiter = " = ") {
+    _globalConfig = Config(argc, argv);
+}
 
-inline CfgParser getCfgParser() {
-    if (!_globalCfgParser) throw std::runtime_error("Global config parser is not initialized");
-    return _globalCfgParser;
+inline Config getConfig() {
+    if (!_globalConfig) throw std::runtime_error("Global config parser is not initialized");
+    return _globalConfig;
 }
 }  // namespace cfgparser
 
