@@ -45,7 +45,7 @@ inline list_container split(const std::string& s, std::string delimiter, bool dr
     return res;
 }
 
-inline std::string concat(const list_container& tokens, std::string delimiter = " ") {
+inline std::string concat(const std::vector<std::string>& tokens, std::string delimiter = " ") {
     std::stringstream ss;
     for (int i = 0; i < tokens.size(); ++i) {
         if (i > 0) ss << delimiter;
@@ -81,7 +81,7 @@ inline std::string trim(const std::string& s, char symbol = ' ') {
     return res;
 }
 
-inline bool startsWith(std::string s, char ch) { return s.length() > 0 && s[0] == ch; }
+inline bool startsWith(const std::string& s, char ch) { return s.length() > 0 && s[0] == ch; }
 inline bool startsWith(const std::string& s, std::string token) {
     if (s.length() < token.length()) return false;
     for (int i = 0; i < token.length(); ++i) {
@@ -89,8 +89,8 @@ inline bool startsWith(const std::string& s, std::string token) {
     }
     return true;
 }
-inline bool endsWith(std::string s, char ch) { return s.length() > 0 && s[0] == ch; }
-inline bool endsWith(std::string s, std::string token) {
+inline bool endsWith(const std::string& s, char ch) { return s.length() > 0 && s[0] == ch; }
+inline bool endsWith(const std::string& s, std::string token) {
     if (s.length() < token.length()) return false;
     for (int i = 1; i <= token.length(); ++i) {
         if (token[token.length() - i] != s[s.length() - i]) return false;
