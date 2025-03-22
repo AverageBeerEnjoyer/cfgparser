@@ -12,6 +12,8 @@
 
 namespace cfgparser {
 
+const std::string defaultDelimiter = " = ";
+
 typedef std::unordered_map<std::string, std::string> unordered_container;
 typedef std::vector<std::pair<std::string, std::string>> ordered_container;
 typedef std::vector<std::string> list_container;
@@ -98,6 +100,28 @@ inline bool endsWith(const std::string& s, std::string token) {
     return true;
 }
 
+inline std::string to_string(const unordered_container& container, std::string delimiter = defaultDelimiter) {
+    std::stringstream ss;
+    for (auto it = container.begin(); it != container.end(); ++it) {
+        ss << it->first << delimiter << it->second << std::endl;
+    }
+    return ss.str();
+}
+inline std::string to_string(const ordered_container& container, std::string delimiter = defaultDelimiter) {
+    std::stringstream ss;
+    for (auto it = container.begin(); it != container.end(); ++it) {
+        ss << it->first << delimiter << it->second << std::endl;
+    }
+    return ss.str();
+}
+inline std::string to_string(const list_container& container, std::string delimiter = defaultDelimiter) {
+    std::stringstream ss;
+    for (auto it = container.begin(); it != container.end(); ++it) {
+        ss << *it << std::endl;
+    }
+    return ss.str();
+}
+
 }  // namespace strutils
 
 class _Config {
@@ -108,7 +132,7 @@ class _Config {
     std::unordered_map<std::string, ordered_container> orderedSections;
     std::unordered_map<std::string, list_container> listSections;
 
-    std::string delimiter = " = ";
+    std::string delimiter = defaultDelimiter;
 
     void handleCommand(std::string line, std::string filename, int linecnt) {
         std::vector<std::string> tokens = strutils::split(line, " ");
@@ -220,7 +244,6 @@ class _Config {
                     value = strutils::trim(strutils::concat(splitt, delimiter));
                 }
 
-                
                 switch (type) {
                     case UNORDERED: {
                         unordSectionsTmp[sectionName][key] = value;
@@ -333,16 +356,41 @@ class _Config {
     std::unordered_map<std::string, ordered_container>& getAllOrdered() { return orderedSections; }
     std::unordered_map<std::string, unordered_container>& getAllUnordered() { return unorderedSections; }
     std::unordered_map<std::string, list_container>& getAllLists() { return listSections; }
+
+    std::string dump() {
+        std::stringstream ss;
+        
+        unordered_container& mainSection = getMainSection();
+        ss << strutils::to_string(mainSection);
+        
+        for (auto section = unorderedSections.begin(); section != unorderedSections.end(); ++section) {
+            if(section->second == mainSection) continue;
+            ss << "[" << section->first << "]" << std::endl;
+            ss << strutils::to_string(section->second);
+        }
+
+        for (auto section = orderedSections.begin(); section != orderedSections.end(); ++section) {
+            ss << "<" << section->first << ">" << std::endl;
+            ss << strutils::to_string(section->second);
+        }
+
+        for (auto section = listSections.begin(); section != listSections.end(); ++section) {
+            ss << "{" << section->first << "}" << std::endl;
+            ss << strutils::to_string(section->second);
+        }
+
+        return ss.str();
+    }
 };
 
 class Config : protected std::shared_ptr<_Config> {
    public:
     Config() : std::shared_ptr<_Config>() {}
-    Config(std::string filename, std::string delimiter = " = ")
+    Config(std::string filename, std::string delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(filename, delimiter)) {}
-    Config(std::vector<std::string> filenames, std::string delimiter = " = ")
+    Config(std::vector<std::string> filenames, std::string delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(filenames, delimiter)) {}
-    Config(int argc, char** argv, std::string delimiter = " = ")
+    Config(int argc, char** argv, std::string delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(argc, argv, delimiter)) {}
 
     operator bool() { return std::shared_ptr<_Config>::operator bool(); }
@@ -351,13 +399,13 @@ class Config : protected std::shared_ptr<_Config> {
 
 inline Config _globalConfig;
 
-inline void initConfig(std::string filename, std::string delimiter = " = ") {
+inline void initConfig(std::string filename, std::string delimiter = defaultDelimiter) {
     _globalConfig = Config(filename);
 }
-inline void initConfig(std::vector<std::string> filenames, std::string delimiter = " = ") {
+inline void initConfig(std::vector<std::string> filenames, std::string delimiter = defaultDelimiter) {
     _globalConfig = Config(filenames);
 }
-inline void initConfig(int argc, char** argv, std::string delimiter = " = ") {
+inline void initConfig(int argc, char** argv, std::string delimiter = defaultDelimiter) {
     _globalConfig = Config(argc, argv);
 }
 
