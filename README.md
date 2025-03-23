@@ -10,9 +10,11 @@ A header-only C++ library for parsing configuration files with support for unord
 *   **Section Support:** Organize settings into unordered, ordered, and list sections.
 *   **Includes:** Support for including other configuration files using the `!include` directive.
 *   **Custom Delimiters:** Specify a custom delimiter for key-value pairs.  The default is ```' = '```.
+*   **Type Conversion:** Convert configuration values to `int`, `double`, `long long`, `bool`.
 *   **String Utilities:** Includes a namespace of useful string manipulation functions.
 *   **Error Handling:** Provides informative error messages for parsing errors, including filename and line number.
 *   **Global Configuration Instance (Optional):**  Provides a global configuration object for simplified access.
+*   **Dump:** Serialize the configuration back into a string using `cfgparser::Config::dump()`.
 
 ## Usage
 
@@ -32,6 +34,7 @@ int main() {
     try {
         cfgparser::Config config("config.cfg");  // Load from a file
         std::string value = config->get("section", "key");  // Get a value from a section
+        int intValue = config->get("section", "int_setting").asInt();  // convert to int
         std::cout << "Value: " << value << std::endl;
     } catch (const std::runtime_error& e) {
         std::cerr << "Error: " << e.what() << std::endl;  // Handle errors
@@ -41,7 +44,6 @@ int main() {
 }
 ```
 
-c++
 
 ### Configuration File Format
 
@@ -84,12 +86,21 @@ item3
 
 -   `bool contains(std::string name)`: Checks if a key exists in the main (unordered) section.
 -   `bool contains(std::string unordSec, std::string name)`: Checks if a key exists in a specific unordered section.
--   `std::string get(std::string key)`: Retrieves a value from the main (unordered) section.
--   `std::string get(std::string section, std::string key)`: Retrieves a value from a specific unordered section.
--   `cfgparser::unordered_container& getSection(std::string section)`: Returns the unordered section as a `std::unordered_map<std::string, std::string>`.
--   `cfgparser::ordered_container& getOrderedSection(std::string section)`: Returns the ordered section as a `std::vector<std::pair<std::string, std::string>>`.
+-   `cfgparser::Value& get(std::string key)`: Retrieves a value from the main (unordered) section.
+-   `cfgparser::Value& get(std::string section, std::string key)`: Retrieves a value from a specific unordered section.
+-   `cfgparser::unordered_container& getSection(std::string section)`: Returns the unordered section as a `std::unordered_map<std::string, cfgparser::Value>`.
+-   `cfgparser::ordered_container& getOrderedSection(std::string section)`: Returns the ordered section as a `std::vector<std::pair<std::string, cfgparser::Value>>`.
 -   `std::string getOrdered(std::string section, std::string key)`: Retrieves a value from a specific ordered section.
--   `cfgparser::list_container getList(std::string name)`: Returns the list section as a `std::vector<std::string>`.
+-   `cfgparser::list_container& getList(std::string name)`: Returns the list section as a `std::vector<cfgparser::Value>`.
+
+### Type Conversion
+
+There are several conversion methods for commonly used data types.
+
+-   `cfgparser::Value::asInt()` 
+-   `cfgparser::Value::asDouble()` 
+-   `cfgparser::Value::asLongLong()` 
+-   `cfgparser::Value::asBool()`
 
 ### Getting all Sections
 
@@ -99,6 +110,7 @@ item3
 -   `std::unordered_map<std::string, cfgparser::list_container>& getAllLists()`: Returns all list sections.
 -   `std::vector<std::string> getConfigFileNames()`: Returns the list of configuration files parsed.
 -   `std::string getConfigFileName()`: Returns the last configuration file parsed.
+-   `std::string dump()`: Serialize the configuration back into a string.
 
 ### Global Configuration Object
 
@@ -168,6 +180,7 @@ The library throws `std::runtime_error` exceptions for various error conditions,
 -   Unknown command (e.g., in an `!include` directive).
 -   Key not found in a section.
 -   Attempting to use the global configuration object before initialization.
+-   Attempting to convert a value to an unsuitable data type.
 
 ## Dependencies
 
@@ -176,6 +189,3 @@ The library throws `std::runtime_error` exceptions for various error conditions,
 ## Installation
 
 Just copy `cfg_parser.hpp` into your project and include it. No external libraries are required.
-
-## Plans
-- add conversion of values to int, long long, bool
