@@ -12,16 +12,61 @@
 
 namespace cfgparser {
 
+class Value {
+   public:
+    std::string value;
+
+    Value(std::string value) : value(value) {}
+    Value() {}
+
+    int asInt() const {
+        try {
+            return std::stoi(value);
+        } catch (std::exception& ex) {
+            throw std::runtime_error("Can not cast to int: '" + value + "'");
+        }
+    }
+    double asDouble() const {
+        try {
+            return std::stod(value);
+        } catch (std::exception& ex) {
+            throw std::runtime_error("Can not cast to double: '" + value + "'");
+        }
+    }
+    long long asLongLong() const {
+        try {
+            return std::stoll(value);
+        } catch (std::exception& ex) {
+            throw std::runtime_error("Can not cast to long long: '" + value + "'");
+        }
+    }
+    bool asBool() const {
+        if (value == "true") return true;
+        if (value == "false") return false;
+        throw std::runtime_error("Can not cast to bool: '" + value + "'");
+    }
+    operator std::string() const { return value; }
+
+    bool operator==(const Value& v) const { return value == v.value; }
+
+    friend std::ostream& operator<<(std::ostream &out, const Value &v) {
+        out << v.value;
+        return out;
+    }
+};
+
 const std::string defaultDelimiter = " = ";
 
-typedef std::unordered_map<std::string, std::string> unordered_container;
-typedef std::vector<std::pair<std::string, std::string>> ordered_container;
-typedef std::vector<std::string> list_container;
+typedef std::unordered_map<std::string, Value> unordered_container;
+typedef std::vector<std::pair<std::string, Value>> ordered_container;
+typedef std::vector<Value> list_container;
 
 namespace strutils {
 
-inline list_container split(const std::string& s, std::string delimiter, bool dropEmptyTokens = false) {
-    list_container res;
+inline std::vector<std::string> split(
+    const std::string& s, std::string delimiter, bool dropEmptyTokens = false
+) {
+    std::vector<std::string> res;
     if (s.empty()) return res;
     std::string buf = "";
     std::string delimbuf = "";
@@ -103,21 +148,21 @@ inline bool endsWith(const std::string& s, std::string token) {
 inline std::string to_string(const unordered_container& container, std::string delimiter = defaultDelimiter) {
     std::stringstream ss;
     for (auto it = container.begin(); it != container.end(); ++it) {
-        ss << it->first << delimiter << it->second << std::endl;
+        ss << it->first << delimiter << it->second.value << std::endl;
     }
     return ss.str();
 }
 inline std::string to_string(const ordered_container& container, std::string delimiter = defaultDelimiter) {
     std::stringstream ss;
     for (auto it = container.begin(); it != container.end(); ++it) {
-        ss << it->first << delimiter << it->second << std::endl;
+        ss << it->first << delimiter << it->second.value << std::endl;
     }
     return ss.str();
 }
 inline std::string to_string(const list_container& container, std::string delimiter = defaultDelimiter) {
     std::stringstream ss;
     for (auto it = container.begin(); it != container.end(); ++it) {
-        ss << *it << std::endl;
+        ss << it->value << std::endl;
     }
     return ss.str();
 }
@@ -250,8 +295,7 @@ class _Config {
                         break;
                     }
                     case ORDERED: {
-                        ordSectionsTmp[sectionName].push_back(std::pair<std::string, std::string>(key, value)
-                        );
+                        ordSectionsTmp[sectionName].push_back({key, value});
                         break;
                     }
                     case LIST: {
@@ -312,7 +356,7 @@ class _Config {
         return unorderedSections[unordSec].find(name) != unorderedSections[unordSec].end();
     }
 
-    std::string get(std::string key) { return get("", key); }
+    Value& get(std::string key) { return get("", key); }
 
     unordered_container& getSection(std::string section) {
         if (unorderedSections.find(section) == unorderedSections.end())
@@ -320,7 +364,7 @@ class _Config {
         return unorderedSections[section];
     }
 
-    std::string get(std::string section, std::string key) {
+    Value& get(std::string section, std::string key) {
         unordered_container& sectionMap = getSection(section);
         if (sectionMap.find(key) == sectionMap.end())
             throw std::runtime_error("'" + key + "' not found in unordered section '" + section + "'");
@@ -333,10 +377,10 @@ class _Config {
         return orderedSections[section];
     }
 
-    std::string getOrdered(std::string section, std::string key) {
+    Value& getOrdered(std::string section, std::string key) {
         ordered_container& sectionMap = getOrderedSection(section);
         ordered_container::iterator it;
-        it = find_if(sectionMap.begin(), sectionMap.end(), [key](std::pair<std::string, std::string>& p) {
+        it = find_if(sectionMap.begin(), sectionMap.end(), [key](std::pair<std::string, Value>& p) {
             return p.first == key;
         });
         if (it == sectionMap.end())
@@ -359,12 +403,12 @@ class _Config {
 
     std::string dump() {
         std::stringstream ss;
-        
+
         unordered_container& mainSection = getMainSection();
         ss << strutils::to_string(mainSection);
-        
+
         for (auto section = unorderedSections.begin(); section != unorderedSections.end(); ++section) {
-            if(section->second == mainSection) continue;
+            if (section->second == mainSection) continue;
             ss << "[" << section->first << "]" << std::endl;
             ss << strutils::to_string(section->second);
         }
