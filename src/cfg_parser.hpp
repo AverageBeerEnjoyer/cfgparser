@@ -387,7 +387,7 @@ class _Config {
             throw std::runtime_error("'" + key + "' not found in ordered section '" + section + "'");
         return it->second;
     }
-    list_container getList(std::string name) {
+    list_container& getList(std::string name) {
         std::unordered_map<std::string, list_container>::iterator it = listSections.find(name);
         if (it == listSections.end()) throw std::runtime_error("No such list section '" + name + "'");
         return it->second;
