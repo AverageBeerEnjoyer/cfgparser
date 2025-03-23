@@ -1,3 +1,4 @@
+There may be inaccuracies because I'm a bit lazy :)
 
 # cfgparser
 
