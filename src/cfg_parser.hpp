@@ -10,6 +10,9 @@
 #include <unordered_map>
 #include <vector>
 #include <version>
+#if __cpp_lib_optional
+#include <optional>
+#endif
 
 namespace cfgparser {
 
@@ -18,6 +21,7 @@ class Value {
     std::string value;
 
     Value(const std::string& value) : value(value) {}
+    Value(const char* value) : value(value) {}
     Value() {}
 
     int asInt() const {
@@ -356,6 +360,55 @@ class _Config {
         if (unorderedSections.find(unordSec) == unorderedSections.end()) return false;
         return unorderedSections[unordSec].find(name) != unorderedSections[unordSec].end();
     }
+
+    #if __cpp_lib_optional
+    
+    std::optional<std::reference_wrapper<unordered_container>> optSection(const std::string& section){
+        auto res = unorderedSections.find(section);
+        if(res == unorderedSections.end()) return std::nullopt;
+        return res->second;
+    }
+
+    std::optional<Value> opt(const std::string& key){return opt("", key);}
+    
+    std::optional<Value> opt(const std::string& section, const std::string& key){
+        auto sec = optSection(section);
+        if(!sec) return std::nullopt;
+        
+        auto res = sec->get().find(key);
+        if(res == sec->get().end()) return std::nullopt;
+    
+        return res->second;
+    }
+    
+    std::optional<std::reference_wrapper<ordered_container>> optOrderedSection(const std::string& section){
+        auto res = orderedSections.find(section);
+        if(res == orderedSections.end()) return std::nullopt;
+        return res->second;
+    }
+    
+    std::optional<Value> optOrdered(const std::string& section, const std::string& key){
+        auto sec = optOrderedSection(section);
+        if(!sec) return std::nullopt;
+        
+        auto res = std::find_if(
+            sec->get().begin(), 
+            sec->get().end(), 
+            [&](auto& item) { return item.first == key; }
+        );
+
+        if(res == sec->get().end()) return std::nullopt;
+        return res->second;
+    }
+    
+    std::optional<std::reference_wrapper<list_container>> optList(const std::string& list){
+        auto res = listSections.find(list);
+        if(res == listSections.end()) return std::nullopt;
+        return res->second;
+    }
+    
+    #endif // __cpp_lib_optional
+
 
     Value& get(const std::string& key) { return get("", key); }
 
