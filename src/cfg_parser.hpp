@@ -9,6 +9,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <vector>
+#include <version>
 
 namespace cfgparser {
 
@@ -16,7 +17,7 @@ class Value {
    public:
     std::string value;
 
-    Value(std::string value) : value(value) {}
+    Value(const std::string& value) : value(value) {}
     Value() {}
 
     int asInt() const {
@@ -64,7 +65,7 @@ typedef std::vector<Value> list_container;
 namespace strutils {
 
 inline std::vector<std::string> split(
-    const std::string& s, std::string delimiter, bool dropEmptyTokens = false
+    const std::string& s, const std::string& delimiter, bool dropEmptyTokens = false
 ) {
     std::vector<std::string> res;
     if (s.empty()) return res;
@@ -92,7 +93,7 @@ inline std::vector<std::string> split(
     return res;
 }
 
-inline std::string concat(const std::vector<std::string>& tokens, std::string delimiter = " ") {
+inline std::string concat(const std::vector<std::string>& tokens, const std::string& delimiter = " ") {
     std::stringstream ss;
     for (int i = 0; i < tokens.size(); ++i) {
         if (i > 0) ss << delimiter;
@@ -129,7 +130,7 @@ inline std::string trim(const std::string& s, char symbol = ' ') {
 }
 
 inline bool startsWith(const std::string& s, char ch) { return s.length() > 0 && s[0] == ch; }
-inline bool startsWith(const std::string& s, std::string token) {
+inline bool startsWith(const std::string& s, const std::string& token) {
     if (s.length() < token.length()) return false;
     for (int i = 0; i < token.length(); ++i) {
         if (s[i] != token[i]) return false;
@@ -137,7 +138,7 @@ inline bool startsWith(const std::string& s, std::string token) {
     return true;
 }
 inline bool endsWith(const std::string& s, char ch) { return s.length() > 0 && s[s.length() - 1] == ch; }
-inline bool endsWith(const std::string& s, std::string token) {
+inline bool endsWith(const std::string& s, const std::string& token) {
     if (s.length() < token.length()) return false;
     for (int i = 1; i <= token.length(); ++i) {
         if (token[token.length() - i] != s[s.length() - i]) return false;
@@ -145,21 +146,21 @@ inline bool endsWith(const std::string& s, std::string token) {
     return true;
 }
 
-inline std::string to_string(const unordered_container& container, std::string delimiter = defaultDelimiter) {
+inline std::string to_string(const unordered_container& container, const std::string& delimiter = defaultDelimiter) {
     std::stringstream ss;
     for (auto it = container.begin(); it != container.end(); ++it) {
         ss << it->first << delimiter << it->second.value << std::endl;
     }
     return ss.str();
 }
-inline std::string to_string(const ordered_container& container, std::string delimiter = defaultDelimiter) {
+inline std::string to_string(const ordered_container& container, const std::string& delimiter = defaultDelimiter) {
     std::stringstream ss;
     for (auto it = container.begin(); it != container.end(); ++it) {
         ss << it->first << delimiter << it->second.value << std::endl;
     }
     return ss.str();
 }
-inline std::string to_string(const list_container& container, std::string delimiter = defaultDelimiter) {
+inline std::string to_string(const list_container& container, const std::string& delimiter = defaultDelimiter) {
     std::stringstream ss;
     for (auto it = container.begin(); it != container.end(); ++it) {
         ss << it->value << std::endl;
@@ -179,7 +180,7 @@ class _Config {
 
     std::string delimiter = defaultDelimiter;
 
-    void handleCommand(std::string line, std::string filename, int linecnt) {
+    void handleCommand(const std::string& line, const std::string& filename, int linecnt) {
         std::vector<std::string> tokens = strutils::split(line, " ");
         if (tokens.size() == 0) error(filename, line, linecnt, "Command expected after '!'");
         std::string cmd = tokens[0];
@@ -192,7 +193,7 @@ class _Config {
         error(filename, line, linecnt, "Unknown command '" + cmd + "'");
     }
 
-    void error(std::string filename, std::string line, int linecnt, std::string description) {
+    void error(const std::string& filename, const std::string& line, int linecnt, const std::string& description) {
         std::string message = "Config parser error in file '";
         message += filename;
         message += "', line: ";
@@ -205,12 +206,12 @@ class _Config {
     }
 
     void parseAll() {
-        for (std::string filename : configFileNames) {
+        for (const std::string& filename : configFileNames) {
             parse(filename);
         }
     }
 
-    void parse(std::string filename) {
+    void parse(const std::string& filename) {
         try {
             unordered_container mainSection;
             std::unordered_map<std::string, unordered_container> unordSectionsTmp;
@@ -327,19 +328,19 @@ class _Config {
     }
 
    public:
-    _Config(std::string filename, std::string delimiter) {
+    _Config(const std::string& filename, const std::string& delimiter) {
         this->delimiter = delimiter;
         this->configFileNames.push_back(filename);
         parseAll();
     }
 
-    _Config(std::vector<std::string> fileNames, std::string delimiter) {
+    _Config(const std::vector<std::string>& fileNames, const std::string& delimiter) {
         this->delimiter = delimiter;
         this->configFileNames = fileNames;
         parseAll();
     }
 
-    _Config(int argc, char** argv, std::string delimiter) {
+    _Config(int argc, char** argv, const std::string& delimiter) {
         this->delimiter = delimiter;
         for (int i = 1; i < argc; ++i) {
             configFileNames.push_back(argv[i]);
@@ -348,36 +349,36 @@ class _Config {
     }
 
     // only for unordered sections
-    bool contains(std::string name) { return contains("", name); }
+    bool contains(const std::string& name) { return contains("", name); }
 
     // only for unordered sections
-    bool contains(std::string unordSec, std::string name) {
+    bool contains(const std::string& unordSec, const std::string& name) {
         if (unorderedSections.find(unordSec) == unorderedSections.end()) return false;
         return unorderedSections[unordSec].find(name) != unorderedSections[unordSec].end();
     }
 
-    Value& get(std::string key) { return get("", key); }
+    Value& get(const std::string& key) { return get("", key); }
 
-    unordered_container& getSection(std::string section) {
+    unordered_container& getSection(const std::string& section) {
         if (unorderedSections.find(section) == unorderedSections.end())
             throw std::runtime_error("No such unordered section '" + section + "'");
         return unorderedSections[section];
     }
 
-    Value& get(std::string section, std::string key) {
+    Value& get(const std::string& section, const std::string& key) {
         unordered_container& sectionMap = getSection(section);
         if (sectionMap.find(key) == sectionMap.end())
             throw std::runtime_error("'" + key + "' not found in unordered section '" + section + "'");
         return sectionMap[key];
     }
 
-    ordered_container& getOrderedSection(std::string section) {
+    ordered_container& getOrderedSection(const std::string& section) {
         if (orderedSections.find(section) == orderedSections.end())
             throw std::runtime_error("No such ordered section '" + section + "'");
         return orderedSections[section];
     }
 
-    Value& getOrdered(std::string section, std::string key) {
+    Value& getOrdered(const std::string& section, const std::string& key) {
         ordered_container& sectionMap = getOrderedSection(section);
         ordered_container::iterator it;
         it = find_if(sectionMap.begin(), sectionMap.end(), [key](std::pair<std::string, Value>& p) {
@@ -387,7 +388,7 @@ class _Config {
             throw std::runtime_error("'" + key + "' not found in ordered section '" + section + "'");
         return it->second;
     }
-    list_container& getList(std::string name) {
+    list_container& getList(const std::string& name) {
         std::unordered_map<std::string, list_container>::iterator it = listSections.find(name);
         if (it == listSections.end()) throw std::runtime_error("No such list section '" + name + "'");
         return it->second;
@@ -430,11 +431,11 @@ class _Config {
 class Config : protected std::shared_ptr<_Config> {
    public:
     Config() : std::shared_ptr<_Config>() {}
-    Config(std::string filename, std::string delimiter = defaultDelimiter)
+    Config(const std::string& filename, const std::string& delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(filename, delimiter)) {}
-    Config(std::vector<std::string> filenames, std::string delimiter = defaultDelimiter)
+    Config(const std::vector<std::string>& filenames, const std::string& delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(filenames, delimiter)) {}
-    Config(int argc, char** argv, std::string delimiter = defaultDelimiter)
+    Config(int argc, char** argv, const std::string& delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(argc, argv, delimiter)) {}
 
     operator bool() { return std::shared_ptr<_Config>::operator bool(); }
@@ -443,13 +444,13 @@ class Config : protected std::shared_ptr<_Config> {
 
 inline Config _globalConfig;
 
-inline void initConfig(std::string filename, std::string delimiter = defaultDelimiter) {
+inline void initConfig(const std::string& filename, const std::string& delimiter = defaultDelimiter) {
     _globalConfig = Config(filename);
 }
-inline void initConfig(std::vector<std::string> filenames, std::string delimiter = defaultDelimiter) {
+inline void initConfig(const std::vector<std::string>& filenames, const std::string& delimiter = defaultDelimiter) {
     _globalConfig = Config(filenames);
 }
-inline void initConfig(int argc, char** argv, std::string delimiter = defaultDelimiter) {
+inline void initConfig(int argc, char** argv, const std::string& delimiter = defaultDelimiter) {
     _globalConfig = Config(argc, argv);
 }
 
