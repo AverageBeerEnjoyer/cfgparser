@@ -498,13 +498,13 @@ class Config : protected std::shared_ptr<_Config> {
 inline Config _globalConfig;
 
 inline void initConfig(const std::string& filename, const std::string& delimiter = defaultDelimiter) {
-    _globalConfig = Config(filename);
+    _globalConfig = Config(filename, delimiter);
 }
 inline void initConfig(const std::vector<std::string>& filenames, const std::string& delimiter = defaultDelimiter) {
-    _globalConfig = Config(filenames);
+    _globalConfig = Config(filenames, delimiter);
 }
 inline void initConfig(int argc, char** argv, const std::string& delimiter = defaultDelimiter) {
-    _globalConfig = Config(argc, argv);
+    _globalConfig = Config(argc, argv, delimiter);
 }
 
 inline Config getConfig() {
