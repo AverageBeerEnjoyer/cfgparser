@@ -3,7 +3,9 @@
 #include <string.h>  //strerror()
 
 #include <algorithm>
+#include <deque>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -15,6 +17,8 @@
 #endif
 
 namespace cfgparser {
+
+namespace fs = std::filesystem;
 
 class Value {
    public:
@@ -54,7 +58,7 @@ class Value {
 
     bool operator==(const Value& v) const { return value == v.value; }
 
-    friend std::ostream& operator<<(std::ostream &out, const Value &v) {
+    friend std::ostream& operator<<(std::ostream& out, const Value& v) {
         out << v.value;
         return out;
     }
@@ -65,7 +69,14 @@ const std::string defaultDelimiter = " = ";
 typedef std::unordered_map<std::string, Value> unordered_container;
 typedef std::vector<std::pair<std::string, Value>> ordered_container;
 typedef std::vector<Value> list_container;
+namespace errhandle {
+struct StackFrame {
+    fs::path file;
+    int line_number = 0;
+};
 
+using StackTrace = std::deque<StackFrame>;
+}  // namespace errhandle
 namespace strutils {
 
 inline std::vector<std::string> split(
@@ -176,169 +187,189 @@ inline std::string to_string(const list_container& container, const std::string&
 
 class _Config {
    private:
-    enum SectionType { UNORDERED, ORDERED, LIST };
-    std::vector<std::string> configFileNames;
+    static fs::path make_absolute_path(const fs::path& included, const fs::path& from) {
+        if (included.is_absolute()) return included;
+        else if (from.empty()) return fs::absolute(included);
+        else return fs::absolute(from.parent_path() / included);
+    }
+
+    enum SectionType { UNORDERED,
+                       ORDERED,
+                       LIST };
+    std::vector<fs::path> configFileNames;
     std::unordered_map<std::string, unordered_container> unorderedSections;
     std::unordered_map<std::string, ordered_container> orderedSections;
     std::unordered_map<std::string, list_container> listSections;
 
     std::string delimiter = defaultDelimiter;
 
-    void handleCommand(const std::string& line, const std::string& filename, int linecnt) {
+    void handleCommand(const std::string& line, errhandle::StackTrace& trace) {
+        errhandle::StackFrame& frame = trace.back();
         std::vector<std::string> tokens = strutils::split(line, " ");
-        if (tokens.size() == 0) error(filename, line, linecnt, "Command expected after '!'");
+        if (tokens.size() == 0) throw std::runtime_error("Command expected after '!'");
         std::string cmd = tokens[0];
         tokens.erase(tokens.begin());
 
         if (cmd == "include") {
-            parse(strutils::concat(tokens));
+            parse(strutils::concat(tokens), trace);
             return;
         }
-        error(filename, line, linecnt, "Unknown command '" + cmd + "'");
+        throw std::runtime_error("Unknown command '" + cmd + "'");
     }
 
-    void error(const std::string& filename, const std::string& line, int linecnt, const std::string& description) {
-        std::string message = "Config parser error in file '";
-        message += filename;
-        message += "', line: ";
-        message += std::to_string(linecnt);
-        message += "\n";
-        message += line;
-        message += "\n";
-        message += description;
+    void error(const errhandle::StackTrace& trace, const std::string& description) {
+        std::string message = "Config parser: " + description;
+        if(!trace.empty()){
+            message += "\nStack trace: ";
+            for (auto it = trace.rbegin(); it != trace.rend(); ++it) {
+                message += "\n";
+                message += it->file;
+                message += ":";
+                message += std::to_string(it->line_number);
+            }
+        }
         throw std::runtime_error(message);
     }
 
     void parseAll() {
-        for (const std::string& filename : configFileNames) {
-            parse(filename);
+        for (const fs::path& filename : configFileNames) {
+            errhandle::StackTrace trace;
+            try{
+                parse(filename, trace);
+            } catch(std::exception& ex){
+                error(trace, ex.what());
+            }
         }
     }
 
-    void parse(const std::string& filename) {
-        try {
-            unordered_container mainSection;
-            std::unordered_map<std::string, unordered_container> unordSectionsTmp;
-            std::unordered_map<std::string, ordered_container> ordSectionsTmp;
-            std::unordered_map<std::string, list_container> listSectionsTmp;
+    void parse(const fs::path& filename, errhandle::StackTrace& trace) {
+        fs::path absolute_path = make_absolute_path(filename, trace.empty() ? fs::path() : trace.back().file);
 
-            std::ifstream file(filename.c_str());
-            if (file.fail()) {
-                throw std::runtime_error(
-                    "can not open file '" + filename + "': " + std::string(strerror(errno))
-                );
-            }
+        auto loop_search_res = std::find_if(trace.begin(), trace.end(), [&](const errhandle::StackFrame& sf){ return sf.file == absolute_path; });
+        if (loop_search_res != trace.end()) throw std::runtime_error("file loop found");
 
-            // name of current section
-            std::string sectionName;
-            SectionType type = UNORDERED;
-
-            std::string line;
-            std::string key, value;
-
-            int linecnt = 0;
-            while (getline(file, line)) {
-                ++linecnt;
-                line = strutils::trim(line, '\r');
-                line = strutils::trimLeft(line);
-                if (line.empty()) continue;
-
-                // commands (only include at this moment, maybe smth more later)
-                if (strutils::startsWith(line, "!")) {
-                    handleCommand(strutils::trimLeft(line, '!'), filename, linecnt);
-                    continue;
-                }
-
-                // comments
-                if (strutils::startsWith(line, "#")) continue;
-
-                // unordered section
-                if (strutils::startsWith(line, "[")) {
-                    line = strutils::trimRight(line);
-                    if (!strutils::endsWith(line, "]"))
-                        error(filename, line, linecnt, "Incorrect section format");
-                    type = UNORDERED;
-                    sectionName = line.substr(1, line.length() - 2);
-                    unordSectionsTmp[sectionName];
-                    continue;
-                }
-
-                // ordered section
-                if (strutils::startsWith(line, "<")) {
-                    line = strutils::trimRight(line);
-                    if (!strutils::endsWith(line, ">"))
-                        error(filename, line, linecnt, "Incorrect section format");
-                    sectionName = line.substr(1, line.length() - 2);
-                    type = ORDERED;
-                    ordSectionsTmp[sectionName];
-                    continue;
-                }
-
-                // list section
-                if (strutils::startsWith(line, "{")) {
-                    line = strutils::trimRight(line);
-                    if (!strutils::endsWith(line, "}"))
-                        error(filename, line, linecnt, "Incorrect section format");
-                    sectionName = strutils::trim(line.substr(1, line.length() - 2));
-                    type = LIST;
-                    listSectionsTmp[sectionName];
-                    continue;
-                }
-
-                // key-value parsing
-                if (type != LIST) {
-                    std::vector<std::string> splitt = strutils::split(line, delimiter);
-                    if (splitt.size() < 2) error(filename, line, linecnt, "Incorrect line format");
-                    key = strutils::trim(splitt[0]);
-                    splitt.erase(splitt.begin());
-                    value = strutils::trim(strutils::concat(splitt, delimiter));
-                }
-
-                switch (type) {
-                    case UNORDERED: {
-                        unordSectionsTmp[sectionName][key] = value;
-                        break;
-                    }
-                    case ORDERED: {
-                        ordSectionsTmp[sectionName].push_back({key, value});
-                        break;
-                    }
-                    case LIST: {
-                        listSectionsTmp[sectionName].push_back(strutils::trim(line));
-                        break;
-                    }
-                }
-            }
-
-            // merge
-            for (auto it = unordSectionsTmp.begin(); it != unordSectionsTmp.end(); ++it) {
-                for (auto it1 = it->second.begin(); it1 != it->second.end(); ++it1) {
-                    unorderedSections[it->first][it1->first] = it1->second;
-                }
-            }
-            for (auto it = ordSectionsTmp.begin(); it != ordSectionsTmp.end(); ++it) {
-                orderedSections[it->first] = it->second;
-            }
-            for (auto it = listSectionsTmp.begin(); it != listSectionsTmp.end(); ++it) {
-                listSections[it->first] = it->second;
-            }
-
-            file.close();
-        } catch (std::exception& ex) {
-            throw std::runtime_error("Config parser error in file " + filename + "\n" + ex.what());
-        } catch (...) {
-            throw std::runtime_error("Config parser unknown error");
+        
+        unordered_container mainSection;
+        std::unordered_map<std::string, unordered_container> unordSectionsTmp;
+        std::unordered_map<std::string, ordered_container> ordSectionsTmp;
+        std::unordered_map<std::string, list_container> listSectionsTmp;
+        
+        std::ifstream file(absolute_path);
+        if (file.fail()) {
+            throw std::runtime_error(
+                "can not open file '" + absolute_path.string() + "': " + std::string(strerror(errno))
+            );
         }
+
+        trace.push_back(
+            errhandle::StackFrame{
+                .file = absolute_path
+            }
+        );
+        errhandle::StackFrame& frame = trace.back();
+        
+        // name of current section
+        std::string sectionName;
+        SectionType type = UNORDERED;
+
+        std::string line;
+        std::string key, value;
+
+        while (getline(file, line)) {
+            ++frame.line_number;
+            line = strutils::trim(line, '\r');
+            line = strutils::trimLeft(line);
+            if (line.empty()) continue;
+
+            // commands (only include at this moment, maybe smth more later)
+            if (strutils::startsWith(line, "!")) {
+                handleCommand(strutils::trimLeft(line, '!'), trace);
+                continue;
+            }
+
+            // comments
+            if (strutils::startsWith(line, "#")) continue;
+
+            // unordered section
+            if (strutils::startsWith(line, "[")) {
+                line = strutils::trimRight(line);
+                if (!strutils::endsWith(line, "]")) throw std::runtime_error("Incorrect section format");
+                type = UNORDERED;
+                sectionName = line.substr(1, line.length() - 2);
+                unordSectionsTmp[sectionName];
+                continue;
+            }
+
+            // ordered section
+            if (strutils::startsWith(line, "<")) {
+                line = strutils::trimRight(line);
+                if (!strutils::endsWith(line, ">")) throw std::runtime_error("Incorrect section format");
+                sectionName = line.substr(1, line.length() - 2);
+                type = ORDERED;
+                ordSectionsTmp[sectionName];
+                continue;
+            }
+
+            // list section
+            if (strutils::startsWith(line, "{")) {
+                line = strutils::trimRight(line);
+                if (!strutils::endsWith(line, "}")) throw std::runtime_error("Incorrect section format");
+                sectionName = strutils::trim(line.substr(1, line.length() - 2));
+                type = LIST;
+                listSectionsTmp[sectionName];
+                continue;
+            }
+
+            // key-value parsing
+            if (type != LIST) {
+                std::vector<std::string> splitt = strutils::split(line, delimiter);
+                if (splitt.size() < 2) throw std::runtime_error("Incorrect line format");
+                key = strutils::trim(splitt[0]);
+                splitt.erase(splitt.begin());
+                value = strutils::trim(strutils::concat(splitt, delimiter));
+            }
+
+            switch (type) {
+                case UNORDERED: {
+                    unordSectionsTmp[sectionName][key] = value;
+                    break;
+                }
+                case ORDERED: {
+                    ordSectionsTmp[sectionName].push_back({key, value});
+                    break;
+                }
+                case LIST: {
+                    listSectionsTmp[sectionName].push_back(strutils::trim(line));
+                    break;
+                }
+            }
+        }
+        file.close();
+
+        // merge
+        for (auto it = unordSectionsTmp.begin(); it != unordSectionsTmp.end(); ++it) {
+            for (auto it1 = it->second.begin(); it1 != it->second.end(); ++it1) {
+                unorderedSections[it->first][it1->first] = it1->second;
+            }
+        }
+        for (auto it = ordSectionsTmp.begin(); it != ordSectionsTmp.end(); ++it) {
+            orderedSections[it->first] = it->second;
+        }
+        for (auto it = listSectionsTmp.begin(); it != listSectionsTmp.end(); ++it) {
+            listSections[it->first] = it->second;
+        }
+
+        trace.pop_back();
     }
 
    public:
-    _Config(const std::string& filename, const std::string& delimiter) {
+    _Config(const fs::path& filename, const std::string& delimiter) {
         this->delimiter = delimiter;
         this->configFileNames.push_back(filename);
         parseAll();
     }
 
-    _Config(const std::vector<std::string>& fileNames, const std::string& delimiter) {
+    _Config(const std::vector<fs::path>& fileNames, const std::string& delimiter) {
         this->delimiter = delimiter;
         this->configFileNames = fileNames;
         parseAll();
@@ -361,54 +392,53 @@ class _Config {
         return unorderedSections[unordSec].find(name) != unorderedSections[unordSec].end();
     }
 
-    #if __cpp_lib_optional
-    
-    std::optional<std::reference_wrapper<unordered_container>> optSection(const std::string& section){
+#if __cpp_lib_optional
+
+    std::optional<std::reference_wrapper<unordered_container>> optSection(const std::string& section) {
         auto res = unorderedSections.find(section);
-        if(res == unorderedSections.end()) return std::nullopt;
+        if (res == unorderedSections.end()) return std::nullopt;
         return res->second;
     }
 
-    std::optional<Value> opt(const std::string& key){return opt("", key);}
-    
-    std::optional<Value> opt(const std::string& section, const std::string& key){
+    std::optional<Value> opt(const std::string& key) { return opt("", key); }
+
+    std::optional<Value> opt(const std::string& section, const std::string& key) {
         auto sec = optSection(section);
-        if(!sec) return std::nullopt;
-        
+        if (!sec) return std::nullopt;
+
         auto res = sec->get().find(key);
-        if(res == sec->get().end()) return std::nullopt;
-    
+        if (res == sec->get().end()) return std::nullopt;
+
         return res->second;
     }
-    
-    std::optional<std::reference_wrapper<ordered_container>> optOrderedSection(const std::string& section){
+
+    std::optional<std::reference_wrapper<ordered_container>> optOrderedSection(const std::string& section) {
         auto res = orderedSections.find(section);
-        if(res == orderedSections.end()) return std::nullopt;
+        if (res == orderedSections.end()) return std::nullopt;
         return res->second;
     }
-    
-    std::optional<Value> optOrdered(const std::string& section, const std::string& key){
+
+    std::optional<Value> optOrdered(const std::string& section, const std::string& key) {
         auto sec = optOrderedSection(section);
-        if(!sec) return std::nullopt;
-        
+        if (!sec) return std::nullopt;
+
         auto res = std::find_if(
-            sec->get().begin(), 
-            sec->get().end(), 
+            sec->get().begin(),
+            sec->get().end(),
             [&](auto& item) { return item.first == key; }
         );
 
-        if(res == sec->get().end()) return std::nullopt;
+        if (res == sec->get().end()) return std::nullopt;
         return res->second;
     }
-    
-    std::optional<std::reference_wrapper<list_container>> optList(const std::string& list){
-        auto res = listSections.find(list);
-        if(res == listSections.end()) return std::nullopt;
-        return res->second;
-    }
-    
-    #endif // __cpp_lib_optional
 
+    std::optional<std::reference_wrapper<list_container>> optList(const std::string& list) {
+        auto res = listSections.find(list);
+        if (res == listSections.end()) return std::nullopt;
+        return res->second;
+    }
+
+#endif  // __cpp_lib_optional
 
     Value& get(const std::string& key) { return get("", key); }
 
@@ -447,7 +477,7 @@ class _Config {
         return it->second;
     }
 
-    std::vector<std::string> getConfigFileNames() { return configFileNames; }
+    std::vector<fs::path> getConfigFileNames() { return configFileNames; }
     std::string getConfigFileName() { return configFileNames[configFileNames.size() - 1]; }
 
     unordered_container& getMainSection() { return unorderedSections[""]; }
@@ -486,8 +516,12 @@ class Config : protected std::shared_ptr<_Config> {
     Config() : std::shared_ptr<_Config>() {}
     Config(const std::string& filename, const std::string& delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(filename, delimiter)) {}
-    Config(const std::vector<std::string>& filenames, const std::string& delimiter = defaultDelimiter)
+    Config(const fs::path& filename, const std::string& delimiter = defaultDelimiter)
+        : std::shared_ptr<_Config>(new _Config(filename, delimiter)) {}
+    Config(const std::vector<fs::path>& filenames, const std::string& delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(filenames, delimiter)) {}
+    Config(const std::vector<std::string>& filenames, const std::string& delimiter = defaultDelimiter)
+        : std::shared_ptr<_Config>(new _Config(std::vector<fs::path>(filenames.begin(), filenames.end()), delimiter)) {}
     Config(int argc, char** argv, const std::string& delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(argc, argv, delimiter)) {}
 
@@ -497,11 +531,17 @@ class Config : protected std::shared_ptr<_Config> {
 
 inline Config _globalConfig;
 
+inline void initConfig(const fs::path& filename, const std::string& delimiter = defaultDelimiter) {
+    _globalConfig = Config(filename, delimiter);
+}
 inline void initConfig(const std::string& filename, const std::string& delimiter = defaultDelimiter) {
     _globalConfig = Config(filename, delimiter);
 }
-inline void initConfig(const std::vector<std::string>& filenames, const std::string& delimiter = defaultDelimiter) {
+inline void initConfig(const std::vector<fs::path>& filenames, const std::string& delimiter = defaultDelimiter) {
     _globalConfig = Config(filenames, delimiter);
+}
+inline void initConfig(const std::vector<std::string>& filenames, const std::string& delimiter = defaultDelimiter) {
+    _globalConfig = Config(std::vector<fs::path>(filenames.begin(), filenames.end()), delimiter);
 }
 inline void initConfig(int argc, char** argv, const std::string& delimiter = defaultDelimiter) {
     _globalConfig = Config(argc, argv, delimiter);
