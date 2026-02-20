@@ -347,16 +347,16 @@ class _Config {
         file.close();
 
         // merge
-        for (auto it = unordSectionsTmp.begin(); it != unordSectionsTmp.end(); ++it) {
-            for (auto it1 = it->second.begin(); it1 != it->second.end(); ++it1) {
-                unorderedSections[it->first][it1->first] = it1->second;
+        for (const auto& [sec_name, sec] : unordSectionsTmp){
+            for (const auto& [key, value]: sec){
+                unorderedSections[sec_name][key] = value;
             }
         }
-        for (auto it = ordSectionsTmp.begin(); it != ordSectionsTmp.end(); ++it) {
-            orderedSections[it->first] = it->second;
+        for (const auto& [sec_name, sec] : ordSectionsTmp) {
+            orderedSections[sec_name] = sec;
         }
-        for (auto it = listSectionsTmp.begin(); it != listSectionsTmp.end(); ++it) {
-            listSections[it->first] = it->second;
+        for (const auto& [sec_name, sec] : listSectionsTmp){ 
+            listSections[sec_name] = sec;
         }
 
         trace.pop_back();
