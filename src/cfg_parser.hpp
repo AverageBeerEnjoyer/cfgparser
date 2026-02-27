@@ -514,8 +514,6 @@ class _Config {
 class Config : protected std::shared_ptr<_Config> {
    public:
     Config() : std::shared_ptr<_Config>() {}
-    Config(const std::string& filename, const std::string& delimiter = defaultDelimiter)
-        : std::shared_ptr<_Config>(new _Config(filename, delimiter)) {}
     Config(const fs::path& filename, const std::string& delimiter = defaultDelimiter)
         : std::shared_ptr<_Config>(new _Config(filename, delimiter)) {}
     Config(const std::vector<fs::path>& filenames, const std::string& delimiter = defaultDelimiter)
@@ -532,9 +530,6 @@ class Config : protected std::shared_ptr<_Config> {
 inline Config _globalConfig;
 
 inline void initConfig(const fs::path& filename, const std::string& delimiter = defaultDelimiter) {
-    _globalConfig = Config(filename, delimiter);
-}
-inline void initConfig(const std::string& filename, const std::string& delimiter = defaultDelimiter) {
     _globalConfig = Config(filename, delimiter);
 }
 inline void initConfig(const std::vector<fs::path>& filenames, const std::string& delimiter = defaultDelimiter) {
